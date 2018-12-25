@@ -8,6 +8,8 @@
 		</member>
 		<member name="app_amd" displayname="Answering Machine Detection Application" remove_on_change="apps/app_amd.o apps/app_amd.so">
 		</member>
+		<member name="app_amd_file" displayname="Answering Machine Detection Application with file playbacks on background" remove_on_change="apps/app_amd_file.o apps/app_amd_file.so">
+		</member>
 		<member name="app_authenticate" displayname="Authentication Application" remove_on_change="apps/app_authenticate.o apps/app_authenticate.so">
 		</member>
 		<member name="app_cdr" displayname="Tell Asterisk to not maintain a CDR for the current call" remove_on_change="apps/app_cdr.o apps/app_cdr.so">
