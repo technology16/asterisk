@@ -189,6 +189,7 @@ static const char app[] = "AMDFILE";
  	int maxWaitTimeForFrame  = dfltMaxWaitTimeForFrame;
 
  	AST_DECLARE_APP_ARGS(args,
+ 		AST_APP_ARG(argFileName);
  		AST_APP_ARG(argInitialSilence);
  		AST_APP_ARG(argGreeting);
  		AST_APP_ARG(argAfterGreetingSilence);
@@ -201,6 +202,12 @@ static const char app[] = "AMDFILE";
  	);
 
  	ast_format_clear(&readFormat);
+
+	if (ast_strlen_zero(data)) {
+		ast_log(LOG_WARNING, "AMDFile requires an argument (filename)\n");
+		return -1;
+	}
+
  	ast_verb(3, "AMD: %s %s %s (Fmt: %s)\n", ast_channel_name(chan),
  		S_COR(ast_channel_caller(chan)->ani.number.valid, ast_channel_caller(chan)->ani.number.str, "(N/A)"),
  		S_COR(ast_channel_redirecting(chan)->from.number.valid, ast_channel_redirecting(chan)->from.number.str, "(N/A)"),
@@ -247,9 +254,9 @@ static const char app[] = "AMDFILE";
  		maxWaitTimeForFrame = betweenWordsSilence;
 
  	/* Now we're ready to roll! */
- 	ast_verb(3, "AMD: initialSilence [%d] greeting [%d] afterGreetingSilence [%d] "
+ 	ast_verb(3, "AMD: filename [%s] initialSilence [%d] greeting [%d] afterGreetingSilence [%d] "
  		"totalAnalysisTime [%d] minimumWordLength [%d] betweenWordsSilence [%d] maximumNumberOfWords [%d] silenceThreshold [%d] maximumWordLength [%d] \n",
- 				initialSilence, greeting, afterGreetingSilence, totalAnalysisTime,
+				args.argFileName, initialSilence, greeting, afterGreetingSilence, totalAnalysisTime,
  				minimumWordLength, betweenWordsSilence, maximumNumberOfWords, silenceThreshold, maximumWordLength);
 
  	/* Set read format to signed linear so we get signed linear frames in */
