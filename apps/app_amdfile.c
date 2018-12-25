@@ -1,4 +1,4 @@
-*
+/*
  * Asterisk -- An open source telephony toolkit.
  *
  * Copyright (C) 2003 - 2006, Aheeva Technology.
@@ -93,8 +93,8 @@
  			of outbound calls. Process begins after playback of file starts, and end when playback of file ends.</para>
  			<para>Simply call this application after the call
  			has been answered (outbound only, of course).</para>
- 			<para>When loaded, AMD reads amd.conf and uses the parameters specified as
- 			default values. Those default values get overwritten when the calling AMD
+ 			<para>When loaded, AMDFile reads amdfile.conf and uses the parameters specified as
+ 			default values. Those default values get overwritten when the calling AMDFile
  			with parameters.</para>
  			<para>This application sets the following channel variables:</para>
  			<variablelist>
@@ -206,10 +206,10 @@ static const char app[] = "AMDFILE";
 
 	if (ast_strlen_zero(data)) {
 		ast_log(LOG_WARNING, "AMDFile requires an argument (filename)\n");
-		return -1;
+		return;
 	}
 
- 	ast_verb(3, "AMD: %s %s %s (Fmt: %s)\n", ast_channel_name(chan),
+ 	ast_verb(3, "AMDFile: %s %s %s (Fmt: %s)\n", ast_channel_name(chan),
  		S_COR(ast_channel_caller(chan)->ani.number.valid, ast_channel_caller(chan)->ani.number.str, "(N/A)"),
  		S_COR(ast_channel_redirecting(chan)->from.number.valid, ast_channel_redirecting(chan)->from.number.str, "(N/A)"),
  		ast_getformatname(ast_channel_readformat(chan)));
@@ -237,7 +237,7 @@ static const char app[] = "AMDFILE";
  		if (!ast_strlen_zero(args.argMaximumWordLength))
  			maximumWordLength = atoi(args.argMaximumWordLength);
  	} else {
- 		ast_debug(1, "AMD using the default parameters.\n");
+ 		ast_debug(1, "AMDFile using the default parameters.\n");
  	}
 
  	/* Find lowest ms value, that will be max wait time for a frame */
@@ -255,7 +255,7 @@ static const char app[] = "AMDFILE";
  		maxWaitTimeForFrame = betweenWordsSilence;
 
  	/* Now we're ready to roll! */
- 	ast_verb(3, "AMD: filename [%s] initialSilence [%d] greeting [%d] afterGreetingSilence [%d] "
+ 	ast_verb(3, "AMDFile: filename [%s] initialSilence [%d] greeting [%d] afterGreetingSilence [%d] "
  		"totalAnalysisTime [%d] minimumWordLength [%d] betweenWordsSilence [%d] maximumNumberOfWords [%d] silenceThreshold [%d] maximumWordLength [%d] \n",
 				args.argFileName, initialSilence, greeting, afterGreetingSilence, totalAnalysisTime,
  				minimumWordLength, betweenWordsSilence, maximumNumberOfWords, silenceThreshold, maximumWordLength);
@@ -263,7 +263,7 @@ static const char app[] = "AMDFILE";
  	/* Set read format to signed linear so we get signed linear frames in */
  	ast_format_copy(&readFormat, ast_channel_readformat(chan));
  	if (ast_set_read_format_by_id(chan, AST_FORMAT_SLINEAR) < 0 ) {
- 		ast_log(LOG_WARNING, "AMD: Channel [%s]. Unable to set to linear mode, giving up\n", ast_channel_name(chan));
+ 		ast_log(LOG_WARNING, "AMDFile: Channel [%s]. Unable to set to linear mode, giving up\n", ast_channel_name(chan));
  		pbx_builtin_setvar_helper(chan , "AMDSTATUS", "");
  		pbx_builtin_setvar_helper(chan , "AMDCAUSE", "");
  		return;
@@ -271,7 +271,7 @@ static const char app[] = "AMDFILE";
 
  	/* Create a new DSP that will detect the silence */
  	if (!(silenceDetector = ast_dsp_new())) {
- 		ast_log(LOG_WARNING, "AMD: Channel [%s]. Unable to create silence detector :(\n", ast_channel_name(chan));
+ 		ast_log(LOG_WARNING, "AMDFile: Channel [%s]. Unable to create silence detector :(\n", ast_channel_name(chan));
  		pbx_builtin_setvar_helper(chan , "AMDSTATUS", "");
  		pbx_builtin_setvar_helper(chan , "AMDCAUSE", "");
  		return;
@@ -282,8 +282,8 @@ static const char app[] = "AMDFILE";
 
  	/* Turn on stream from file to channel */
 	ast_stopstream(chan);
-	if (ast_streamfile(chan, tmp, ast_channel_language(chan))) {
-		ast_log(LOG_WARNING, "AMD: ast_streamfile failed on %s for %s\n", ast_channel_name(chan), (char *)tmp);
+	if (ast_streamfile(chan, args.argFileName, ast_channel_language(chan))) {
+		ast_log(LOG_WARNING, "AMDFile: ast_streamfile failed on %s for %s\n", ast_channel_name(chan), (char *)args.argFileName);
 		pbx_builtin_setvar_helper(chan , "AMDSTATUS", "");
 		pbx_builtin_setvar_helper(chan , "AMDCAUSE", "");
 		return;
@@ -307,7 +307,7 @@ static const char app[] = "AMDFILE";
 
 			/* If we fail to read in a frame, that means they hung up */
 			if (!(f = ast_read(chan))) {
-				ast_verb(3, "AMD: Channel [%s]. HANGUP\n", ast_channel_name(chan));
+				ast_verb(3, "AMDFile: Channel [%s]. HANGUP\n", ast_channel_name(chan));
 				ast_debug(1, "Got hangup\n");
 				strcpy(amdStatus, "HANGUP");
 				res = 1;
@@ -324,7 +324,7 @@ static const char app[] = "AMDFILE";
 
 				iTotalTime += framelength;
 				if (iTotalTime >= totalAnalysisTime) {
-					ast_verb(3, "AMD: Channel [%s]. Too long...\n", ast_channel_name(chan));
+					ast_verb(3, "AMDFile: Channel [%s]. Too long...\n", ast_channel_name(chan));
 					strcpy(amdStatus , "NOTSURE");
 					sprintf(amdCause , "TOOLONG-%d", iTotalTime);
 					isAnalized = 1;
@@ -343,18 +343,18 @@ static const char app[] = "AMDFILE";
 
 					if (silenceDuration >= betweenWordsSilence) {
 						if (currentState != STATE_IN_SILENCE ) {
-							ast_verb(3, "AMD: Channel [%s]. Changed state to STATE_IN_SILENCE\n", ast_channel_name(chan));
+							ast_verb(3, "AMDFile: Channel [%s]. Changed state to STATE_IN_SILENCE\n", ast_channel_name(chan));
 						}
 						/* Find words less than word duration */
 						if (consecutiveVoiceDuration < minimumWordLength && consecutiveVoiceDuration > 0){
-							ast_verb(3, "AMD: Channel [%s]. Short Word Duration: %d\n", ast_channel_name(chan), consecutiveVoiceDuration);
+							ast_verb(3, "AMDFile: Channel [%s]. Short Word Duration: %d\n", ast_channel_name(chan), consecutiveVoiceDuration);
 						}
 						currentState  = STATE_IN_SILENCE;
 						consecutiveVoiceDuration = 0;
 					}
 
 					if (inInitialSilence == 1  && silenceDuration >= initialSilence) {
-						ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: silenceDuration:%d initialSilence:%d\n",
+						ast_verb(3, "AMDFile: Channel [%s]. ANSWERING MACHINE: silenceDuration:%d initialSilence:%d\n",
 							ast_channel_name(chan), silenceDuration, initialSilence);
 						strcpy(amdStatus , "MACHINE");
 						sprintf(amdCause , "INITIALSILENCE-%d-%d", silenceDuration, initialSilence);
@@ -363,7 +363,7 @@ static const char app[] = "AMDFILE";
 					}
 
 					if (silenceDuration >= afterGreetingSilence  &&  inGreeting == 1) {
-						ast_verb(3, "AMD: Channel [%s]. HUMAN: silenceDuration:%d afterGreetingSilence:%d\n",
+						ast_verb(3, "AMDFile: Channel [%s]. HUMAN: silenceDuration:%d afterGreetingSilence:%d\n",
 							ast_channel_name(chan), silenceDuration, afterGreetingSilence);
 						strcpy(amdStatus , "HUMAN");
 						sprintf(amdCause , "HUMAN-%d-%d", silenceDuration, afterGreetingSilence);
@@ -379,17 +379,17 @@ static const char app[] = "AMDFILE";
 					   number of words if my previous state was Silence, which means that I moved into a word. */
 					if (consecutiveVoiceDuration >= minimumWordLength && currentState == STATE_IN_SILENCE) {
 						iWordsCount++;
-						ast_verb(3, "AMD: Channel [%s]. Word detected. iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
+						ast_verb(3, "AMDFile: Channel [%s]. Word detected. iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
 						currentState = STATE_IN_WORD;
 					}
 					if (consecutiveVoiceDuration >= maximumWordLength){
-						ast_verb(3, "AMD: Channel [%s]. Maximum Word Length detected. [%d]\n", ast_channel_name(chan), consecutiveVoiceDuration);
+						ast_verb(3, "AMDFile: Channel [%s]. Maximum Word Length detected. [%d]\n", ast_channel_name(chan), consecutiveVoiceDuration);
 						strcpy(amdStatus , "MACHINE");
 						sprintf(amdCause , "MAXWORDLENGTH-%d", consecutiveVoiceDuration);
 						isAnalized = 1;
 					}
 					if (iWordsCount >= maximumNumberOfWords) {
-						ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
+						ast_verb(3, "AMDFile: Channel [%s]. ANSWERING MACHINE: iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
 						strcpy(amdStatus , "MACHINE");
 						sprintf(amdCause , "MAXWORDS-%d-%d", iWordsCount, maximumNumberOfWords);
 						res = 1;
@@ -397,7 +397,7 @@ static const char app[] = "AMDFILE";
 					}
 
 					if (inGreeting == 1 && voiceDuration >= greeting) {
-						ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: voiceDuration:%d greeting:%d\n", ast_channel_name(chan), voiceDuration, greeting);
+						ast_verb(3, "AMDFile: Channel [%s]. ANSWERING MACHINE: voiceDuration:%d greeting:%d\n", ast_channel_name(chan), voiceDuration, greeting);
 						strcpy(amdStatus , "MACHINE");
 						sprintf(amdCause , "LONGGREETING-%d-%d", voiceDuration, greeting);
 						res = 1;
@@ -406,13 +406,13 @@ static const char app[] = "AMDFILE";
 
 					if (voiceDuration >= minimumWordLength ) {
 						if (silenceDuration > 0)
-							ast_verb(3, "AMD: Channel [%s]. Detected Talk, previous silence duration: %d\n", ast_channel_name(chan), silenceDuration);
+							ast_verb(3, "AMDFile: Channel [%s]. Detected Talk, previous silence duration: %d\n", ast_channel_name(chan), silenceDuration);
 						silenceDuration = 0;
 					}
 					if (consecutiveVoiceDuration >= minimumWordLength && inGreeting == 0) {
 						/* Only go in here once to change the greeting flag when we detect the 1st word */
 						if (silenceDuration > 0)
-							ast_verb(3, "AMD: Channel [%s]. Before Greeting Time:  silenceDuration: %d voiceDuration: %d\n", ast_channel_name(chan), silenceDuration, voiceDuration);
+							ast_verb(3, "AMDFile: Channel [%s]. Before Greeting Time:  silenceDuration: %d voiceDuration: %d\n", ast_channel_name(chan), silenceDuration, voiceDuration);
 						inInitialSilence = 0;
 						inGreeting = 1;
 					}
@@ -426,7 +426,7 @@ static const char app[] = "AMDFILE";
 
  	if (!isAnalized) {
  		/* It took too long to get a frame back. Giving up. */
- 		ast_verb(3, "AMD: Channel [%s]. Too long...\n", ast_channel_name(chan));
+ 		ast_verb(3, "AMDFile: Channel [%s]. Too long...\n", ast_channel_name(chan));
  		strcpy(amdStatus , "NOTSURE");
  		sprintf(amdCause , "TOOLONG-%d", iTotalTime);
  	}
@@ -437,7 +437,7 @@ static const char app[] = "AMDFILE";
 
  	/* Restore channel read format */
  	if (readFormat.id && ast_set_read_format(chan, &readFormat))
- 		ast_log(LOG_WARNING, "AMD: Unable to restore read format on '%s'\n", ast_channel_name(chan));
+ 		ast_log(LOG_WARNING, "AMDFile: Unable to restore read format on '%s'\n", ast_channel_name(chan));
 
  	/* Free the DSP used to detect silence */
  	ast_dsp_free(silenceDetector);
@@ -508,7 +508,7 @@ static const char app[] = "AMDFILE";
 
  	ast_config_destroy(cfg);
 
- 	ast_verb(3, "AMD defaults: initialSilence [%d] greeting [%d] afterGreetingSilence [%d] "
+ 	ast_verb(3, "AMDFile defaults: initialSilence [%d] greeting [%d] afterGreetingSilence [%d] "
  		"totalAnalysisTime [%d] minimumWordLength [%d] betweenWordsSilence [%d] maximumNumberOfWords [%d] silenceThreshold [%d] maximumWordLength [%d]\n",
  		dfltInitialSilence, dfltGreeting, dfltAfterGreetingSilence, dfltTotalAnalysisTime,
  		dfltMinimumWordLength, dfltBetweenWordsSilence, dfltMaximumNumberOfWords, dfltSilenceThreshold, dfltMaximumWordLength);
