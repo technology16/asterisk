@@ -1,7 +1,7 @@
 /*
  * Asterisk -- An open source telephony toolkit.
  *
- * Copyright (C) 2003 - 2006, Aheeva Technology.
+ * Copyright (C) 2003 - 2006, Taximaxim.
  *
  * Anatoliy Botov (botov_av@taximaxim.ru)
  *
