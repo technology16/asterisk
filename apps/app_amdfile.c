@@ -158,6 +158,7 @@ static const char app[] = "AMDFILE";
  static void isAnsweringMachine(struct ast_channel *chan, const char *data)
  {
  	int res = 0;
+	int isAnalized = 0;
  	struct ast_frame *f = NULL;
  	struct ast_dsp *silenceDetector = NULL;
  	int dspsilence = 0, framelength = 0;
@@ -279,133 +280,151 @@ static const char app[] = "AMDFILE";
  	/* Set silence threshold to specified value */
  	ast_dsp_set_threshold(silenceDetector, silenceThreshold);
 
- 	/* Now we go into a loop waiting for frames from the channel */
- 	while ((res = ast_waitfor(chan, 2 * maxWaitTimeForFrame)) > -1) {
+ 	/* Turn on stream from file to channel */
+	ast_stopstream(chan);
+	if (ast_streamfile(chan, tmp, ast_channel_language(chan))) {
+		ast_log(LOG_WARNING, "AMD: ast_streamfile failed on %s for %s\n", ast_channel_name(chan), (char *)tmp);
+		pbx_builtin_setvar_helper(chan , "AMDSTATUS", "");
+		pbx_builtin_setvar_helper(chan , "AMDCAUSE", "");
+		return;
+	}
 
- 		/* If we fail to read in a frame, that means they hung up */
- 		if (!(f = ast_read(chan))) {
- 			ast_verb(3, "AMD: Channel [%s]. HANGUP\n", ast_channel_name(chan));
- 			ast_debug(1, "Got hangup\n");
- 			strcpy(amdStatus, "HANGUP");
- 			res = 1;
- 			break;
- 		}
+ 	/* Now we go into a loop waiting for stream ends */
+	while (ast_channel_stream(chan)) {
+		res = ast_sched_wait(ast_channel_sched(chan));
+		if ((res < 0) && !ast_channel_timingfunc(chan)) {
+			res = 0;
+			break;
+		}
+		if (res < 0) {
+			res = 1000;
+		}
+		res = ast_waitfor(chan, res);
+		if (res < 0) {
+			ast_log(LOG_WARNING, "Waitfor failed on %s\n", ast_channel_name(chan));
+			break;
+		} else if (res > 0 && isAnalized == 0) {
 
- 		if (f->frametype == AST_FRAME_VOICE || f->frametype == AST_FRAME_NULL || f->frametype == AST_FRAME_CNG) {
- 			/* If the total time exceeds the analysis time then give up as we are not too sure */
- 			if (f->frametype == AST_FRAME_VOICE) {
- 				framelength = (ast_codec_get_samples(f) / DEFAULT_SAMPLES_PER_MS);
- 			} else {
- 				framelength = 2 * maxWaitTimeForFrame;
- 			}
+			/* If we fail to read in a frame, that means they hung up */
+			if (!(f = ast_read(chan))) {
+				ast_verb(3, "AMD: Channel [%s]. HANGUP\n", ast_channel_name(chan));
+				ast_debug(1, "Got hangup\n");
+				strcpy(amdStatus, "HANGUP");
+				res = 1;
+				break;
+			}
 
- 			iTotalTime += framelength;
- 			if (iTotalTime >= totalAnalysisTime) {
- 				ast_verb(3, "AMD: Channel [%s]. Too long...\n", ast_channel_name(chan));
- 				ast_frfree(f);
- 				strcpy(amdStatus , "NOTSURE");
- 				sprintf(amdCause , "TOOLONG-%d", iTotalTime);
- 				break;
- 			}
+			if (f->frametype == AST_FRAME_VOICE || f->frametype == AST_FRAME_NULL || f->frametype == AST_FRAME_CNG) {
+				/* If the total time exceeds the analysis time then give up as we are not too sure */
+				if (f->frametype == AST_FRAME_VOICE) {
+					framelength = (ast_codec_get_samples(f) / DEFAULT_SAMPLES_PER_MS);
+				} else {
+					framelength = 2 * maxWaitTimeForFrame;
+				}
 
- 			/* Feed the frame of audio into the silence detector and see if we get a result */
- 			if (f->frametype != AST_FRAME_VOICE)
- 				dspsilence += 2 * maxWaitTimeForFrame;
- 			else {
- 				dspsilence = 0;
- 				ast_dsp_silence(silenceDetector, f, &dspsilence);
- 			}
+				iTotalTime += framelength;
+				if (iTotalTime >= totalAnalysisTime) {
+					ast_verb(3, "AMD: Channel [%s]. Too long...\n", ast_channel_name(chan));
+					strcpy(amdStatus , "NOTSURE");
+					sprintf(amdCause , "TOOLONG-%d", iTotalTime);
+					isAnalized = 1;
+				}
 
- 			if (dspsilence > 0) {
- 				silenceDuration = dspsilence;
+				/* Feed the frame of audio into the silence detector and see if we get a result */
+				if (f->frametype != AST_FRAME_VOICE)
+					dspsilence += 2 * maxWaitTimeForFrame;
+				else {
+					dspsilence = 0;
+					ast_dsp_silence(silenceDetector, f, &dspsilence);
+				}
 
- 				if (silenceDuration >= betweenWordsSilence) {
- 					if (currentState != STATE_IN_SILENCE ) {
- 						ast_verb(3, "AMD: Channel [%s]. Changed state to STATE_IN_SILENCE\n", ast_channel_name(chan));
- 					}
- 					/* Find words less than word duration */
- 					if (consecutiveVoiceDuration < minimumWordLength && consecutiveVoiceDuration > 0){
- 						ast_verb(3, "AMD: Channel [%s]. Short Word Duration: %d\n", ast_channel_name(chan), consecutiveVoiceDuration);
- 					}
- 					currentState  = STATE_IN_SILENCE;
- 					consecutiveVoiceDuration = 0;
- 				}
+				if (dspsilence > 0) {
+					silenceDuration = dspsilence;
 
- 				if (inInitialSilence == 1  && silenceDuration >= initialSilence) {
- 					ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: silenceDuration:%d initialSilence:%d\n",
- 						ast_channel_name(chan), silenceDuration, initialSilence);
- 					ast_frfree(f);
- 					strcpy(amdStatus , "MACHINE");
- 					sprintf(amdCause , "INITIALSILENCE-%d-%d", silenceDuration, initialSilence);
- 					res = 1;
- 					break;
- 				}
+					if (silenceDuration >= betweenWordsSilence) {
+						if (currentState != STATE_IN_SILENCE ) {
+							ast_verb(3, "AMD: Channel [%s]. Changed state to STATE_IN_SILENCE\n", ast_channel_name(chan));
+						}
+						/* Find words less than word duration */
+						if (consecutiveVoiceDuration < minimumWordLength && consecutiveVoiceDuration > 0){
+							ast_verb(3, "AMD: Channel [%s]. Short Word Duration: %d\n", ast_channel_name(chan), consecutiveVoiceDuration);
+						}
+						currentState  = STATE_IN_SILENCE;
+						consecutiveVoiceDuration = 0;
+					}
 
- 				if (silenceDuration >= afterGreetingSilence  &&  inGreeting == 1) {
- 					ast_verb(3, "AMD: Channel [%s]. HUMAN: silenceDuration:%d afterGreetingSilence:%d\n",
- 						ast_channel_name(chan), silenceDuration, afterGreetingSilence);
- 					ast_frfree(f);
- 					strcpy(amdStatus , "HUMAN");
- 					sprintf(amdCause , "HUMAN-%d-%d", silenceDuration, afterGreetingSilence);
- 					res = 1;
- 					break;
- 				}
+					if (inInitialSilence == 1  && silenceDuration >= initialSilence) {
+						ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: silenceDuration:%d initialSilence:%d\n",
+							ast_channel_name(chan), silenceDuration, initialSilence);
+						strcpy(amdStatus , "MACHINE");
+						sprintf(amdCause , "INITIALSILENCE-%d-%d", silenceDuration, initialSilence);
+						res = 1;
+						isAnalized = 1;
+					}
 
- 			} else {
- 				consecutiveVoiceDuration += framelength;
- 				voiceDuration += framelength;
+					if (silenceDuration >= afterGreetingSilence  &&  inGreeting == 1) {
+						ast_verb(3, "AMD: Channel [%s]. HUMAN: silenceDuration:%d afterGreetingSilence:%d\n",
+							ast_channel_name(chan), silenceDuration, afterGreetingSilence);
+						strcpy(amdStatus , "HUMAN");
+						sprintf(amdCause , "HUMAN-%d-%d", silenceDuration, afterGreetingSilence);
+						res = 1;
+						isAnalized = 1;
+					}
 
- 				/* If I have enough consecutive voice to say that I am in a Word, I can only increment the
- 				   number of words if my previous state was Silence, which means that I moved into a word. */
- 				if (consecutiveVoiceDuration >= minimumWordLength && currentState == STATE_IN_SILENCE) {
- 					iWordsCount++;
- 					ast_verb(3, "AMD: Channel [%s]. Word detected. iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
- 					currentState = STATE_IN_WORD;
- 				}
- 				if (consecutiveVoiceDuration >= maximumWordLength){
- 					ast_verb(3, "AMD: Channel [%s]. Maximum Word Length detected. [%d]\n", ast_channel_name(chan), consecutiveVoiceDuration);
- 					ast_frfree(f);
- 					strcpy(amdStatus , "MACHINE");
- 					sprintf(amdCause , "MAXWORDLENGTH-%d", consecutiveVoiceDuration);
- 					break;
- 				}
- 				if (iWordsCount >= maximumNumberOfWords) {
- 					ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
- 					ast_frfree(f);
- 					strcpy(amdStatus , "MACHINE");
- 					sprintf(amdCause , "MAXWORDS-%d-%d", iWordsCount, maximumNumberOfWords);
- 					res = 1;
- 					break;
- 				}
+				} else {
+					consecutiveVoiceDuration += framelength;
+					voiceDuration += framelength;
 
- 				if (inGreeting == 1 && voiceDuration >= greeting) {
- 					ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: voiceDuration:%d greeting:%d\n", ast_channel_name(chan), voiceDuration, greeting);
- 					ast_frfree(f);
- 					strcpy(amdStatus , "MACHINE");
- 					sprintf(amdCause , "LONGGREETING-%d-%d", voiceDuration, greeting);
- 					res = 1;
- 					break;
- 				}
+					/* If I have enough consecutive voice to say that I am in a Word, I can only increment the
+					   number of words if my previous state was Silence, which means that I moved into a word. */
+					if (consecutiveVoiceDuration >= minimumWordLength && currentState == STATE_IN_SILENCE) {
+						iWordsCount++;
+						ast_verb(3, "AMD: Channel [%s]. Word detected. iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
+						currentState = STATE_IN_WORD;
+					}
+					if (consecutiveVoiceDuration >= maximumWordLength){
+						ast_verb(3, "AMD: Channel [%s]. Maximum Word Length detected. [%d]\n", ast_channel_name(chan), consecutiveVoiceDuration);
+						strcpy(amdStatus , "MACHINE");
+						sprintf(amdCause , "MAXWORDLENGTH-%d", consecutiveVoiceDuration);
+						isAnalized = 1;
+					}
+					if (iWordsCount >= maximumNumberOfWords) {
+						ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: iWordsCount:%d\n", ast_channel_name(chan), iWordsCount);
+						strcpy(amdStatus , "MACHINE");
+						sprintf(amdCause , "MAXWORDS-%d-%d", iWordsCount, maximumNumberOfWords);
+						res = 1;
+						isAnalized = 1;
+					}
 
- 				if (voiceDuration >= minimumWordLength ) {
- 					if (silenceDuration > 0)
- 						ast_verb(3, "AMD: Channel [%s]. Detected Talk, previous silence duration: %d\n", ast_channel_name(chan), silenceDuration);
- 					silenceDuration = 0;
- 				}
- 				if (consecutiveVoiceDuration >= minimumWordLength && inGreeting == 0) {
- 					/* Only go in here once to change the greeting flag when we detect the 1st word */
- 					if (silenceDuration > 0)
- 						ast_verb(3, "AMD: Channel [%s]. Before Greeting Time:  silenceDuration: %d voiceDuration: %d\n", ast_channel_name(chan), silenceDuration, voiceDuration);
- 					inInitialSilence = 0;
- 					inGreeting = 1;
- 				}
+					if (inGreeting == 1 && voiceDuration >= greeting) {
+						ast_verb(3, "AMD: Channel [%s]. ANSWERING MACHINE: voiceDuration:%d greeting:%d\n", ast_channel_name(chan), voiceDuration, greeting);
+						strcpy(amdStatus , "MACHINE");
+						sprintf(amdCause , "LONGGREETING-%d-%d", voiceDuration, greeting);
+						res = 1;
+						isAnalized = 1;
+					}
 
- 			}
- 		}
- 		ast_frfree(f);
+					if (voiceDuration >= minimumWordLength ) {
+						if (silenceDuration > 0)
+							ast_verb(3, "AMD: Channel [%s]. Detected Talk, previous silence duration: %d\n", ast_channel_name(chan), silenceDuration);
+						silenceDuration = 0;
+					}
+					if (consecutiveVoiceDuration >= minimumWordLength && inGreeting == 0) {
+						/* Only go in here once to change the greeting flag when we detect the 1st word */
+						if (silenceDuration > 0)
+							ast_verb(3, "AMD: Channel [%s]. Before Greeting Time:  silenceDuration: %d voiceDuration: %d\n", ast_channel_name(chan), silenceDuration, voiceDuration);
+						inInitialSilence = 0;
+						inGreeting = 1;
+					}
+
+				}
+			}
+			ast_frfree(f);
+		}
+		ast_sched_runq(ast_channel_sched(chan));
  	}
 
- 	if (!res) {
+ 	if (!isAnalized) {
  		/* It took too long to get a frame back. Giving up. */
  		ast_verb(3, "AMD: Channel [%s]. Too long...\n", ast_channel_name(chan));
  		strcpy(amdStatus , "NOTSURE");
