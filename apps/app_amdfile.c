@@ -299,7 +299,7 @@ static const char app[] = "AMDFILE";
 		if (res < 0) {
 			res = 1000;
 		}
-		res = ast_waitfor(chan, res);
+		res = ast_waitfor(chan, 2 * maxWaitTimeForFrame);
 		if (res < 0) {
 			ast_log(LOG_WARNING, "Waitfor failed on %s\n", ast_channel_name(chan));
 			break;
