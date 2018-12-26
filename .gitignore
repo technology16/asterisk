@@ -34,3 +34,4 @@ menuselect-tree
 latex
 doxygen.log
 .project
+.cproject
